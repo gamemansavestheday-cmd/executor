@@ -449,17 +449,126 @@ static void execute_blueprint(const char *filename) {
 }
 
 // ---------------------------------------------------------------------------
-// MAIN - the only thing you actually run
+// NEW SHIT FOR 0.1.2 - help, guide, dry-run, and direct paste support
+// ---------------------------------------------------------------------------
+
+static void print_help(void) {
+    printf("executor - paste ai slop watch it build real shit\n\n");
+    printf("usage:\n");
+    printf("  executor <blueprint.txt>          run the blueprint\n");
+    printf("  executor -d <blueprint.txt>       dry run - show what it would do\n");
+    printf("  executor --dry-run <blueprint.txt> dry run\n");
+    printf("  executor \"COMMAND|arg1|arg2\"     run blueprint directly from quotes\n");
+    printf("  executor guide                    print the full ai guide\n");
+    printf("  executor help                     show this help + safety tips\n\n");
+    printf("safety tips you absolute animal:\n");
+    printf("  - only run blueprints you trust\n");
+    printf("  - dry-run first if you're not sure\n");
+    printf("  - it can still rm -rf your shit if the ai is evil\n");
+    printf("  - INSTALL_DEPS will run sudo commands\n");
+    printf("  - no real sandbox because we are not cowards\n");
+}
+
+static void print_guide(void) {
+    FILE *f = fopen("guide.txt", "r");
+    if (!f) {
+        f = fopen("src/guide.txt", "r");  // in case you put it in src/
+    }
+    if (!f) {
+        printf("you dumbass you moved or deleted guide.txt\n");
+        printf("put it back in the same folder as the executor binary or in src/guide.txt\n");
+        return;
+    }
+    
+    printf("=== executor AI GUIDE ===\n\n");
+    char line[4096];
+    while (fgets(line, sizeof(line), f)) {
+        printf("%s", line);
+    }
+    fclose(f);
+    printf("\n=== end of guide ===\n");
+}
+
+static void execute_blueprint_dry(const char *filename) {
+    // for now just print the lines - later we can make it prettier
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        printf("cant open %s for dry run\n", filename);
+        return;
+    }
+    printf("--- DRY RUN MODE ---\n");
+    printf("executor would do the following:\n\n");
+    
+    char line[MAX_LINE];
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (strlen(line) == 0 || line[0] == '#') continue;
+        printf("WOULD EXECUTE: %s\n", line);
+    }
+    fclose(f);
+    printf("\n--- end of dry run ---\n");
+    printf("nothing was actually run. safe.\n");
+}
+
+// ---------------------------------------------------------------------------
+// MAIN
 // ---------------------------------------------------------------------------
 int main(int argc, char **argv) {
     if (argc < 2) {
-        printf("Usage: %s <blueprint.txt>\n", argv[0]);
-        printf("you absolute fucking idiot\n");
+        print_help();
         return 1;
     }
-    
-    printf("executor - now actually fast you whiny bitch\n");
-    
-    execute_blueprint(argv[1]);
+
+    // handle special commands first
+    if (strcmp(argv[1], "help") == 0) {
+        print_help();
+        return 0;
+    }
+    if (strcmp(argv[1], "guide") == 0) {
+        print_guide();
+        return 0;
+    }
+
+    bool dry_run = false;
+    const char *target = NULL;
+
+    // check for dry-run flags
+    if (strcmp(argv[1], "-d") == 0 || strcmp(argv[1], "--dry-run") == 0) {
+        dry_run = true;
+        if (argc < 3) {
+            printf("you forgot the blueprint file you idiot\n");
+            return 1;
+        }
+        target = argv[2];
+    } 
+    else {
+        target = argv[1];
+    }
+
+    // if the argument looks like it starts with a command (has | ) treat it as direct paste
+    if (strchr(target, '|') != NULL) {
+        printf("running direct blueprint paste...\n");
+        // for direct paste we just write it to a temp file real quick
+        FILE *tmp = fopen("temp_blueprint.txt", "w");
+        if (tmp) {
+            fprintf(tmp, "%s\n", target);
+            fclose(tmp);
+            if (dry_run) {
+                execute_blueprint_dry("temp_blueprint.txt");
+            } else {
+                execute_blueprint("temp_blueprint.txt");
+            }
+            remove("temp_blueprint.txt");  // cleanup
+        }
+        return 0;
+    }
+
+    // normal file mode
+    if (dry_run) {
+        execute_blueprint_dry(target);
+    } else {
+        execute_blueprint(target);
+    }
+
     return 0;
 }
