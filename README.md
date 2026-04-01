@@ -1,7 +1,6 @@
 # executor
 
-paste ai slop. watch it build real shit. no safety rails.
-
+paste ai slop. watch it build real shit.
 executor is a minimal, extremely fast blueprint runner written in C.  
 you feed it a text file full of commands that an AI generated, and it just fucking does it — creates folders, writes files, runs compilers, assembles bootloaders, pads sectors, launches qemu, whatever degenerate thing you asked for.
 
