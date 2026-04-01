@@ -1,5 +1,5 @@
 /*
- * executor - Non AI Slop Edition (the version that doesn't suck)
+ * executor - 0.1.1 (the version that doesn't suck)
  * 
  * i have no idea what half this code does but it works on my machine so fuck you
  * rewrote because Python was slow as shit and the old sandbox was a security incident waiting to happen
@@ -20,15 +20,17 @@
     #include <windows.h>
     #define mkdir _mkdir
     #define PATH_SEP '\\'
+    #define sleep_ms(x) Sleep(x)
 #else
     #include <unistd.h>
-    #include <dirent.h>
     #define mkdir(path) mkdir(path, 0755)
     #define PATH_SEP '/'
+    #define sleep_ms(x) sleep((x)/1000)
 #endif
 
 #define MAX_LINE 4096
 #define MAX_CONTENT 1048576  // 1MB should be enough for your AI slop
+#define MAX_CMD 8192
 
 // um global current working directory for the blueprint steps (starts as ".")
 static char current_cwd[1024] = ".";
@@ -37,11 +39,14 @@ static char current_cwd[1024] = ".";
 // TOOL CHECKING (require_tool)
 // ---------------------------------------------------------------------------
 static bool tool_exists(const char *tool) {
-    char cmd[512];
+    char cmd[1024];
 #ifdef _WIN32
-    snprintf(cmd, sizeof(cmd), "where %s >nul 2>&1", tool);
+    // windows is retarded so we use where.exe
+    snprintf(cmd, sizeof(cmd), "where \"%s\" >nul 2>&1", tool);
+    if (system(cmd) == 0) return true;
+    snprintf(cmd, sizeof(cmd), "where \"%s.exe\" >nul 2>&1", tool);
 #else
-    snprintf(cmd, sizeof(cmd), "command -v %s >/dev/null 2>&1", tool);
+    snprintf(cmd, sizeof(cmd), "command -v \"%s\" >/dev/null 2>&1", tool);
 #endif
     return system(cmd) == 0;
 }
@@ -49,16 +54,16 @@ static bool tool_exists(const char *tool) {
 static void require_tool(const char *tool) {
     printf("--- [REQUIRE_TOOL] Checking for %s...\n", tool);
     if (!tool_exists(tool)) {
-        printf("🛑 TOOL MISSING: %s\n", tool);
+        printf("TOOL MISSING: %s\n", tool);
         printf("   Install command (copy paste this you degenerate):\n");
 #ifdef _WIN32
         printf("   winget install %s   or   choco install %s\n", tool, tool);
 #else
-        printf("   sudo apt install %s   or   sudo dnf install %s  sudo pacman -S  or whatever your distro uses\n", tool, tool);
+        printf("   sudo apt install %s   or   sudo dnf install %s   or   sudo pacman -S %s   or whatever your distro uses\n", tool, tool, tool);
 #endif
         exit(1);  // die immediately, no mercy
     }
-    printf("✅ Tool '%s' found.\n", tool);
+    printf("Tool '%s' found.\n", tool);
 }
 
 // ---------------------------------------------------------------------------
@@ -68,30 +73,34 @@ static void create_project_folder(const char *name) {
     char fullpath[1024];
     snprintf(fullpath, sizeof(fullpath), "%s%c%s", current_cwd, PATH_SEP, name);
     if (mkdir(fullpath) == 0 || errno == EEXIST) {
-        printf("✅ Created folder: %s/\n", name);
+        printf("Created folder: %s/\n", name);
     } else {
-        printf("❌ Failed to create folder %s: %s\n", name, strerror(errno));
+        printf("failed to create folder %s: %s\n", name, strerror(errno));
         exit(1);
     }
 }
 
 static void set_cwd(const char *new_cwd) {
+    if (chdir(new_cwd) != 0) {
+        printf("failed to chdir to %s: %s\n", new_cwd, strerror(errno));
+        exit(1);
+    }
     strncpy(current_cwd, new_cwd, sizeof(current_cwd)-1);
-    printf("📁 Set working directory to: %s\n", current_cwd);
+    printf("set working directory to: %s\n", current_cwd);
 }
 
-static void create_file(const char *path, const char *content) {
+static void create_file(const char *path, const char *content, size_t content_len) {
     char fullpath[1024];
     snprintf(fullpath, sizeof(fullpath), "%s%c%s", current_cwd, PATH_SEP, path);
     
     FILE *f = fopen(fullpath, "wb");
     if (!f) {
-        printf("❌ Failed to create file %s: %s\n", path, strerror(errno));
+        printf("failed to create file %s: %s\n", path, strerror(errno));
         exit(1);
     }
-    fwrite(content, 1, strlen(content), f);  // works for text and binary-ish
+    fwrite(content, 1, content_len, f);  // now binary safe you fucking animal
     fclose(f);
-    printf("✅ Created file: %s\n", path);
+    printf("created file: %s\n", path);
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +111,7 @@ static void run_command(const char *cmdline) {
     
     FILE *pipe = popen(cmdline, "r");
     if (!pipe) {
-        printf("❌ Failed to run command\n");
+        printf("failed to run command\n");
         exit(1);
     }
     
@@ -113,7 +122,7 @@ static void run_command(const char *cmdline) {
     
     int ret = pclose(pipe);
     if (ret != 0) {
-        printf("🛑 Command failed with code %d\n", ret);
+        printf("command failed with code %d\n", ret);
         exit(1);
     }
 }
@@ -127,7 +136,7 @@ static void pad_bootsector(const char *path) {
     
     FILE *f = fopen(fullpath, "rb");
     if (!f) {
-        printf("❌ pad_bootsector: can't open %s\n", path);
+        printf("pad_bootsector: cant open %s\n", path);
         exit(1);
     }
     fseek(f, 0, SEEK_END);
@@ -135,7 +144,7 @@ static void pad_bootsector(const char *path) {
     fseek(f, 0, SEEK_SET);
     
     if (size > 510) {
-        printf("❌ Bootsector too big (max 510 bytes)\n");
+        printf("bootsector too big (max 510 bytes)\n");
         fclose(f);
         exit(1);
     }
@@ -152,7 +161,7 @@ static void pad_bootsector(const char *path) {
     f = fopen(fullpath, "wb");
     fwrite(data, 1, 512, f);
     fclose(f);
-    printf("✅ Padded bootsector: %s (512 bytes with AA55 signature)\n", path);
+    printf("Padded bootsector: %s (512 bytes with AA55 signature)\n", path);
 }
 
 static void concatenate_files(const char *output, const char *file1, const char *file2) {
@@ -165,17 +174,31 @@ static void concatenate_files(const char *output, const char *file1, const char 
     if (!out) exit(1);
     
     FILE *in = fopen(p1, "rb");
-    if (in) { while (!feof(in)) { char b[4096]; size_t r = fread(b,1,sizeof(b),in); fwrite(b,1,r,out); } fclose(in); }
+    if (in) { 
+        while (!feof(in)) { 
+            char b[4096]; 
+            size_t r = fread(b,1,sizeof(b),in); 
+            fwrite(b,1,r,out); 
+        } 
+        fclose(in); 
+    }
     
     in = fopen(p2, "rb");
-    if (in) { while (!feof(in)) { char b[4096]; size_t r = fread(b,1,sizeof(b),in); fwrite(b,1,r,out); } fclose(in); }
+    if (in) { 
+        while (!feof(in)) { 
+            char b[4096]; 
+            size_t r = fread(b,1,sizeof(b),in); 
+            fwrite(b,1,r,out); 
+        } 
+        fclose(in); 
+    }
     
     fclose(out);
-    printf("✅ Concatenated %s + %s -> %s\n", file1, file2, output);
+    printf("Concatenated %s + %s -> %s\n", file1, file2, output);
 }
 
 // ---------------------------------------------------------------------------
-// Dependency Handler
+// Dependency Handler - now with zero buffer overflow cancer
 // ---------------------------------------------------------------------------
 
 /*
@@ -186,7 +209,6 @@ static void concatenate_files(const char *output, const char *file1, const char 
 static void handle_dependencies(const char *manager, char **deps, int dep_count) {
     printf("--- [DEPENDENCIES] AI wants me to install some shit using '%s' ---\n", manager);
     
-    // first figure out what the fuck OS we're even on because windows users are special snowflakes
     bool is_windows = false;
 #ifdef _WIN32
     is_windows = true;
@@ -194,32 +216,29 @@ static void handle_dependencies(const char *manager, char **deps, int dep_count)
 #endif
 
     if (is_windows) {
-        // windows is its own special kind of hell
         if (strcmp(manager, "winget") == 0 || strcmp(manager, "choco") == 0) {
-            char cmd[4096] = {0};
-            strcat(cmd, manager);
-            strcat(cmd, " install");
+            char cmd[MAX_CMD] = {0};
+            snprintf(cmd, sizeof(cmd), "%s install", manager);
             for (int i = 0; i < dep_count; i++) {
-                strcat(cmd, " ");
-                strcat(cmd, deps[i]);
+                strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1);
+                strncat(cmd, deps[i], sizeof(cmd) - strlen(cmd) - 1);
             }
-            printf("🛑 WINDOWS DEPENDENCY HELL ACTIVATED\n");
+            printf("WINDOWS DEPENDENCY HELL ACTIVATED\n");
             printf("run this exact command in an ADMINISTRATOR terminal:\n");
             printf("   %s\n", cmd);
             printf("then run your blueprint again you fucking animal\n");
-            exit(1); // die so they actually do it
+            exit(1);
         }
         else if (strcmp(manager, "pip") == 0 || strcmp(manager, "pip3") == 0) {
-            // pip on windows is usually safe to just run
-            char cmd[4096] = {0};
+            char cmd[MAX_CMD] = {0};
             snprintf(cmd, sizeof(cmd), "pip install --upgrade");
             for (int i = 0; i < dep_count; i++) {
-                strcat(cmd, " ");
-                strcat(cmd, deps[i]);
+                strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1);
+                strncat(cmd, deps[i], sizeof(cmd) - strlen(cmd) - 1);
             }
             printf("$ %s\n", cmd);
-            system(cmd); // just do it, windows users are already suffering enough
-            printf("✅ python deps installed on windows (probably)\n");
+            system(cmd);
+            printf("python deps installed on windows (probably)\n");
             return;
         }
         else {
@@ -229,105 +248,74 @@ static void handle_dependencies(const char *manager, char **deps, int dep_count)
     }
 
     // LINUX TIME BABY - the part that took me three blackouts to write
-    // we are going full detective mode on your distro because i refuse to make you type sudo commands manually
-    char pm_cmd[4096] = {0};
+    char pm_cmd[MAX_CMD] = {0};
     bool auto_install = false;
 
-    // check for debian/ubuntu/mint/pop_os etc (apt)
     if (strcmp(manager, "apt") == 0 || strcmp(manager, "apt-get") == 0) {
-        strcpy(pm_cmd, "sudo apt update && sudo apt install -y");
+        snprintf(pm_cmd, sizeof(pm_cmd), "sudo apt update && sudo apt install -y");
         for (int i = 0; i < dep_count; i++) {
-            strcat(pm_cmd, " ");
-            strcat(pm_cmd, deps[i]);
+            strncat(pm_cmd, " ", sizeof(pm_cmd) - strlen(pm_cmd) - 1);
+            strncat(pm_cmd, deps[i], sizeof(pm_cmd) - strlen(pm_cmd) - 1);
         }
         printf("detected debian-style system (apt)\n");
         auto_install = true;
     }
-    // fedora/rhel/rocky/centos (dnf)
     else if (strcmp(manager, "dnf") == 0 || strcmp(manager, "yum") == 0) {
-        strcpy(pm_cmd, "sudo dnf install -y");
+        snprintf(pm_cmd, sizeof(pm_cmd), "sudo dnf install -y");
         for (int i = 0; i < dep_count; i++) {
-            strcat(pm_cmd, " ");
-            strcat(pm_cmd, deps[i]);
+            strncat(pm_cmd, " ", sizeof(pm_cmd) - strlen(pm_cmd) - 1);
+            strncat(pm_cmd, deps[i], sizeof(pm_cmd) - strlen(pm_cmd) - 1);
         }
         printf("detected fedora/rhel-style system (dnf)\n");
         auto_install = true;
     }
-        else if (strcmp(token, "INSTALL_DEPS") == 0) {
-            char *manager = strtok(NULL, "|");
-            if (!manager) {
-                printf("❌ INSTALL_DEPS needs a manager you fucking idiot\n");
-                continue;
-            }
-            
-            // collect all the deps after the manager (can be as many as you want)
-            char *dep_list[64]; // i dont know why i picked 64 but it felt right
-            int dep_count = 0;
-            char *dep;
-            while ((dep = strtok(NULL, "|")) != NULL && dep_count < 64) {
-                dep_list[dep_count++] = dep;
-            }
-            
-            if (dep_count == 0) {
-                printf("⚠️ INSTALL_DEPS called with zero packages, skipping like a lazy cunt\n");
-                continue;
-            }
-            
-            // call the massive dependency handler i just wrote above
-            // this is where the magic (and potential system breakage) happens
-            handle_dependencies(manager, dep_list, dep_count);
-        }
-    // arch/manjaro/garuda (pacman)
     else if (strcmp(manager, "pacman") == 0) {
-        strcpy(pm_cmd, "sudo pacman -Syu --noconfirm");
+        snprintf(pm_cmd, sizeof(pm_cmd), "sudo pacman -Syu --noconfirm");
         for (int i = 0; i < dep_count; i++) {
-            strcat(pm_cmd, " ");
-            strcat(pm_cmd, deps[i]);
+            strncat(pm_cmd, " ", sizeof(pm_cmd) - strlen(pm_cmd) - 1);
+            strncat(pm_cmd, deps[i], sizeof(pm_cmd) - strlen(pm_cmd) - 1);
         }
         printf("detected arch-style system (pacman)\n");
         auto_install = true;
     }
-    // void linux (xbps)
     else if (strcmp(manager, "xbps") == 0 || strcmp(manager, "xbps-install") == 0) {
-        strcpy(pm_cmd, "sudo xbps-install -Syu");
+        snprintf(pm_cmd, sizeof(pm_cmd), "sudo xbps-install -Syu");
         for (int i = 0; i < dep_count; i++) {
-            strcat(pm_cmd, " ");
-            strcat(pm_cmd, deps[i]);
+            strncat(pm_cmd, " ", sizeof(pm_cmd) - strlen(pm_cmd) - 1);
+            strncat(pm_cmd, deps[i], sizeof(pm_cmd) - strlen(pm_cmd) - 1);
         }
         printf("detected void linux (xbps)\n");
         auto_install = true;
     }
-    // suse/opensuse (zypper)
     else if (strcmp(manager, "zypper") == 0) {
-        strcpy(pm_cmd, "sudo zypper install -y");
+        snprintf(pm_cmd, sizeof(pm_cmd), "sudo zypper install -y");
         for (int i = 0; i < dep_count; i++) {
-            strcat(pm_cmd, " ");
-            strcat(pm_cmd, deps[i]);
+            strncat(pm_cmd, " ", sizeof(pm_cmd) - strlen(pm_cmd) - 1);
+            strncat(pm_cmd, deps[i], sizeof(pm_cmd) - strlen(pm_cmd) - 1);
         }
         printf("detected suse/opensuse (zypper)\n");
         auto_install = true;
     }
-    // pip/npm for language deps (no sudo needed usually)
     else if (strcmp(manager, "pip") == 0 || strcmp(manager, "pip3") == 0) {
-        strcpy(pm_cmd, "pip3 install --upgrade");
+        snprintf(pm_cmd, sizeof(pm_cmd), "pip3 install --upgrade");
         for (int i = 0; i < dep_count; i++) {
-            strcat(pm_cmd, " ");
-            strcat(pm_cmd, deps[i]);
+            strncat(pm_cmd, " ", sizeof(pm_cmd) - strlen(pm_cmd) - 1);
+            strncat(pm_cmd, deps[i], sizeof(pm_cmd) - strlen(pm_cmd) - 1);
         }
         printf("python dependencies - no sudo needed (probably)\n");
         system(pm_cmd);
-        printf("✅ pip deps installed\n");
+        printf("pip deps installed\n");
         return;
     }
     else if (strcmp(manager, "npm") == 0) {
-        strcpy(pm_cmd, "npm install -g");
+        snprintf(pm_cmd, sizeof(pm_cmd), "npm install -g");
         for (int i = 0; i < dep_count; i++) {
-            strcat(pm_cmd, " ");
-            strcat(pm_cmd, deps[i]);
+            strncat(pm_cmd, " ", sizeof(pm_cmd) - strlen(pm_cmd) - 1);
+            strncat(pm_cmd, deps[i], sizeof(pm_cmd) - strlen(pm_cmd) - 1);
         }
         printf("npm global packages - installing...\n");
         system(pm_cmd);
-        printf("✅ npm deps installed\n");
+        printf("npm deps installed\n");
         return;
     }
     else {
@@ -338,12 +326,12 @@ static void handle_dependencies(const char *manager, char **deps, int dep_count)
     if (auto_install) {
         printf("\n$ %s\n", pm_cmd);
         printf("i'm about to run this with sudo. if you dont want that then ctrl+c right fucking now\n");
-        sleep(3); // give the user 3 seconds to panic and cancel like a sane person
+        sleep_ms(3000);
         int ret = system(pm_cmd);
         if (ret == 0) {
-            printf("✅ system dependencies installed successfully (i hope)\n");
+            printf("system dependencies installed successfully (i hope)\n");
         } else {
-            printf("🛑 install failed or you cancelled. fix it yourself then rerun the blueprint\n");
+            printf("install failed or you cancelled. fix it yourself then rerun the blueprint\n");
             exit(1);
         }
     }
@@ -359,7 +347,7 @@ static void execute_blueprint(const char *filename) {
         exit(1);
     }
     
-    printf("--- Starting ---\n");
+    printf("--- Starting Executor ---\n");
     
     char line[MAX_LINE];
     char content_buffer[MAX_CONTENT] = {0};
@@ -368,19 +356,16 @@ static void execute_blueprint(const char *filename) {
     bool collecting_content = false;
     
     while (fgets(line, sizeof(line), f)) {
-        // strip newline and whitespace
         line[strcspn(line, "\r\n")] = 0;
         if (strlen(line) == 0 || line[0] == '#') continue;
         
         if (collecting_content) {
             if (strcmp(line, "END_FILE") == 0) {
-                content_buffer[content_len] = 0;
-                create_file(current_file_path, content_buffer);
+                create_file(current_file_path, content_buffer, content_len);
                 collecting_content = false;
                 content_len = 0;
                 continue;
             }
-            // append line + newline
             size_t to_add = strlen(line);
             if (content_len + to_add + 2 < MAX_CONTENT) {
                 memcpy(content_buffer + content_len, line, to_add);
@@ -390,7 +375,6 @@ static void execute_blueprint(const char *filename) {
             continue;
         }
         
-        // parse COMMAND|arg1|arg2|...
         char *token = strtok(line, "|");
         if (!token) continue;
         
@@ -415,12 +399,11 @@ static void execute_blueprint(const char *filename) {
             }
         }
         else if (strcmp(token, "RUN_COMMAND") == 0) {
-            // rebuild the full command from remaining tokens
-            char fullcmd[2048] = {0};
+            char fullcmd[MAX_CMD] = {0};
             char *arg = strtok(NULL, "|");
             while (arg) {
-                if (fullcmd[0]) strcat(fullcmd, " ");
-                strcat(fullcmd, arg);
+                if (fullcmd[0]) strncat(fullcmd, " ", sizeof(fullcmd) - strlen(fullcmd) - 1);
+                strncat(fullcmd, arg, sizeof(fullcmd) - strlen(fullcmd) - 1);
                 arg = strtok(NULL, "|");
             }
             if (fullcmd[0]) run_command(fullcmd);
@@ -435,15 +418,14 @@ static void execute_blueprint(const char *filename) {
             char *f2 = strtok(NULL, "|");
             if (out && f1 && f2) concatenate_files(out, f1, f2);
         }
-else if (strcmp(token, "INSTALL_DEPS") == 0) {
+        else if (strcmp(token, "INSTALL_DEPS") == 0) {
             char *manager = strtok(NULL, "|");
             if (!manager) {
-                printf("❌ INSTALL_DEPS needs a manager you fucking idiot\n");
+                printf("INSTALL_DEPS needs a manager you fucking idiot\n");
                 continue;
             }
             
-            // collect all the deps after the manager (can be as many as you want)
-            char *dep_list[64]; // i dont know why i picked 64 but it felt right
+            char *dep_list[64];
             int dep_count = 0;
             char *dep;
             while ((dep = strtok(NULL, "|")) != NULL && dep_count < 64) {
@@ -451,17 +433,14 @@ else if (strcmp(token, "INSTALL_DEPS") == 0) {
             }
             
             if (dep_count == 0) {
-                printf("⚠️ INSTALL_DEPS called with zero packages, skipping like a lazy cunt\n");
+                printf("INSTALL_DEPS called with zero packages, skipping like a lazy cunt\n");
                 continue;
             }
             
-            // call the massive dependency handler i just wrote above
-            // this is where the magic (and potential system breakage) happens
             handle_dependencies(manager, dep_list, dep_count);
         }
-
         else {
-            printf("unknown command ignored fuck you: %s\n", token);  // i was too lazy to make it fatal
+            printf("unknown command ignored fuck you: %s\n", token);
         }
     }
     
@@ -479,9 +458,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    // i have no idea why i put this here but it looks professional
-    printf("executor - now actually fast\n");
+    printf("executor - now actually fast you whiny bitch\n");
     
     execute_blueprint(argv[1]);
     return 0;
-};
+}
