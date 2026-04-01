@@ -1,30 +1,28 @@
 YOUR ENTIRE OUTPUT MUST BE RAW TEXT COMMANDS ONLY. NO MARKDOWN. NO EXPLANATIONS.
-
 COMMANDS (use | as separator):
-
 INSTALL_DEPS|manager|package1|package2|package3|...
 
 Examples (use the right one for your OS):
 
-# Debian/Ubuntu/Mint
+Debian/Ubuntu/Mint
 INSTALL_DEPS|apt|gcc|make|qemu-system-x86_64|nasm
 
-# Fedora/RHEL
+Fedora/RHEL
 INSTALL_DEPS|dnf|gcc|make|qemu-system-x86_64|nasm
 
-# Arch/Manjaro
+Arch/Manjaro
 INSTALL_DEPS|pacman|gcc|make|qemu|nasmd
 
-# Void Linux
+Void Linux
 INSTALL_DEPS|xbps|gcc|make|qemu|nasmd
 
-# openSUSE/SUSE
+openSUSE/SUSE
 INSTALL_DEPS|zypper|gcc|make|qemu|nasmd
 
-# Python packages (works on any OS)
+Python packages (works on any OS)
 INSTALL_DEPS|pip|flask|requests|numpy
 
-# npm global packages
+npm global packages
 INSTALL_DEPS|npm|typescript|vite
 
 REQUIRE_TOOL|toolname
@@ -63,4 +61,4 @@ RULES FOR AI:
 - for windows just use winget or pip, the core will handle it
 - you can mix multiple INSTALL_DEPS lines, it will run them one by one
 - if the AI (you) fucks up the manager name the executor will call you a degenerate and die
-- code everything fully do not truncate, omit, or simplify anything so dont be a dumbass and be lazy and write short code
+- code everything fully do not truncate, omit, or simplify anything so dont be a dumbass and be lazy and write short code that doesnt add everything and has a placeholder do not do this
