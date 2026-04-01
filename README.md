@@ -1,4 +1,4 @@
-  executor
+# executor
 
 paste ai slop. watch it build real shit.
 executor is a minimal, extremely fast blueprint runner written in C.  
@@ -13,7 +13,7 @@ you feed it a text file full of commands that an AI generated, and it just fucki
 - concatenates binaries (bootloader + kernel = fun)
 - dies immediately if anything goes wrong (the way god intended)
 
-    how to use
+# how to use
 
 1. save the AI output as `myproject.txt`
 2. run it:
