@@ -18,7 +18,6 @@ you feed it a text file full of commands that an AI generated, and it just fucki
 1. save the AI output as `myproject.txt`
 2. run it:
 
-```bash
 ./executor myproject.txt
 
 how to compile 
@@ -106,4 +105,4 @@ RULES FOR AI:
 - for windows just use winget or pip, the core will handle it
 - you can mix multiple INSTALL_DEPS lines, it will run them one by one
 - if the AI (you) fucks up the manager name the executor will call you a degenerate and die
-- code everything fully do not truncate, omit, or simplify anything so dont be a dumbass and be lazy and write short code
+- code everything fully do not truncate, omit, or simplify anything so dont be a dumbass and be lazy and write short code that doesnt add everything and has a placeholder do not do this
