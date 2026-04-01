@@ -4,7 +4,7 @@ paste ai slop. watch it build real shit.
 executor is a minimal, extremely fast blueprint runner written in C.  
 you feed it a text file full of commands that an AI generated, and it just fucking does it — creates folders, writes files, runs compilers, assembles bootloaders, pads sectors, launches qemu, whatever degenerate thing you asked for.
 
-    what it actually does
+# what it actually does
 - creates project structures
 - writes source files (text or binary)
 - runs any shell command (gcc, nasm, pip, npm, qemu, etc.)
