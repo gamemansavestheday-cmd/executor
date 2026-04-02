@@ -13,6 +13,11 @@ you feed it a text file full of commands that an AI generated, and it just fucki
 - concatenates binaries (bootloader + kernel = fun)
 - dies immediately if anything goes wrong (the way god intended)
 - gives you safety tips if you run ./executor help (or executor.exe) and it also gives you help output if you dont run help and just the binary by itself
+
+# safety (for pussies) 
+since everyone keeps on telling me to do this for safety use dry run if your running a blueprint someone gave you or a ai gave you you dont have to do this every time but its not recommended by me you can just read the blueprints code if your not sure
+as another note if you run help itll give you safety tips which are obvious if you have common sense
+
 # how to use
 
 1. save the AI output as `myproject.txt`
