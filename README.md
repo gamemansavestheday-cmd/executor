@@ -28,20 +28,20 @@ as another note if you run help itll give you safety tips which are obvious if y
 how to compile 
 linux:
 
-`gcc -o executor src/executor.c -Wall -Wextra -O2 -std=c99`
+`gcc -o executor executor.c -Wall -Wextra -O2 -std=c99`
 
-`gcc -o executor src/executor.c -Wall -Wextra -O3 -std=c99 -march=native`
+`gcc -o executor executor.c -Wall -Wextra -O3 -std=c99 -march=native`
 
 after build just do chmod +x executor
 `./executor myblueprint.txt`
 
 windows (for the poor dumbfucks)
 you need mingw-w64 installed first
-run mingw with this command `gcc -o executor.exe src/executor.c -Wall -Wextra -O2 -std=c99` to compile
+run mingw with this command `gcc -o executor.exe executor.c -Wall -Wextra -O2 -std=c99` to compile
 alternative if you only have regular cmd/powershell and winget:
 `winget install mingw`
 
-`gcc -o executor.exe src/executor.c -Wall -Wextra -O2 -std=c99`
+`gcc -o executor.exe executor.c -Wall -Wextra -O2 -std=c99`
 Then run it with:
 `executor.exe myblueprint.txt`
 
