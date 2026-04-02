@@ -7,6 +7,8 @@
  * Safer, faster, and i actually know what the fuck is happening under the hood (most of the time)
  */
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +29,12 @@
     #define PATH_SEP '/'
     #define sleep_ms(x) sleep((x)/1000)
 #endif
+static void set_cwd(const char *new_cwd);
+static void create_project_folder(const char *name);
+static void create_file(const char *path, const char *content, size_t content_len);
+static void concatenate_files(const char *output, const char *file1, const char *file2);
+static void pad_bootsector(const char *path); // FORWARD DECLARATIONS please do not remove these so the fucking compiler doesnt implode and touch us all if the compiler
+// doesnt know these functions exist itll butt booty molest us
 
 #define MAX_LINE 4096
 #define MAX_CONTENT 1048576  // 1MB should be enough for your AI slop
@@ -67,40 +75,84 @@ static void require_tool(const char *tool) {
 }
 
 // ---------------------------------------------------------------------------
-// FILESYSTEM SHIT
+// FILESYSTEM SHIT - fixed the stupid truncation warnings + added set_cwd
+// i went full retard on the snprintf because gcc was being a whiny bitch
 // ---------------------------------------------------------------------------
 static void create_project_folder(const char *name) {
     char fullpath[1024];
-    snprintf(fullpath, sizeof(fullpath), "%s%c%s", current_cwd, PATH_SEP, name);
+    snprintf(fullpath, sizeof(fullpath) - 1, "%s%c%s", current_cwd, PATH_SEP, name);
+    fullpath[sizeof(fullpath)-1] = '\0';   // force null termination because gcc has trust issues
+    
     if (mkdir(fullpath) == 0 || errno == EEXIST) {
-        printf("Created folder: %s/\n", name);
+        printf("created folder: %s/\n", name);
     } else {
         printf("failed to create folder %s: %s\n", name, strerror(errno));
         exit(1);
     }
 }
 
-static void set_cwd(const char *new_cwd) {
+static void set_cwd(const char *new_cwd) {   
+    // this was missing and causing the implicit declaration error this is what i fixed this update but i wont be releasing this was a minor version if your reading this, i went fulll retard mode so last updates thats why you couldnt compile last release and there was a duplicate of dependency handler when im trying to organize sections of the code
     if (chdir(new_cwd) != 0) {
         printf("failed to chdir to %s: %s\n", new_cwd, strerror(errno));
         exit(1);
     }
     strncpy(current_cwd, new_cwd, sizeof(current_cwd)-1);
+    current_cwd[sizeof(current_cwd)-1] = '\0';
     printf("set working directory to: %s\n", current_cwd);
 }
 
 static void create_file(const char *path, const char *content, size_t content_len) {
     char fullpath[1024];
-    snprintf(fullpath, sizeof(fullpath), "%s%c%s", current_cwd, PATH_SEP, path);
+    snprintf(fullpath, sizeof(fullpath) - 1, "%s%c%s", current_cwd, PATH_SEP, path);
+    fullpath[sizeof(fullpath)-1] = '\0';
     
     FILE *f = fopen(fullpath, "wb");
     if (!f) {
         printf("failed to create file %s: %s\n", path, strerror(errno));
         exit(1);
     }
-    fwrite(content, 1, content_len, f);  // now binary safe you fucking animal
+    fwrite(content, 1, content_len, f); // now binary safe you fucking animal
     fclose(f);
-    printf("created file: %s\n", path);
+    printf("created file: %s\n", path); 
+}
+
+static void concatenate_files(const char *output, const char *file1, const char *file2) {
+    // for when you want to slap bootloader + kernel together like a true schizo
+    char outpath[1024], p1[1024], p2[1024];
+    snprintf(outpath, sizeof(outpath) - 1, "%s%c%s", current_cwd, PATH_SEP, output);
+    snprintf(p1, sizeof(p1) - 1, "%s%c%s", current_cwd, PATH_SEP, file1);
+    snprintf(p2, sizeof(p2) - 1, "%s%c%s", current_cwd, PATH_SEP, file2);
+    
+    outpath[sizeof(outpath)-1] = '\0';
+    p1[sizeof(p1)-1] = '\0';
+    p2[sizeof(p2)-1] = '\0';
+    
+    FILE *out = fopen(outpath, "wb");
+    if (!out) exit(1);
+    
+    FILE *in = fopen(p1, "rb");
+    if (in) { 
+        while (!feof(in)) { 
+            char b[4096]; 
+            size_t r = fread(b,1,sizeof(b),in); 
+            fwrite(b,1,r,out); 
+        } 
+        fclose(in); 
+    }
+    
+    in = fopen(p2, "rb");
+    if (in) { 
+        while (!feof(in)) { 
+            char b[4096]; 
+            size_t r = fread(b,1,sizeof(b),in); 
+            fwrite(b,1,r,out); 
+        } 
+        fclose(in); 
+    }
+    
+    fclose(out);
+    printf("concatenated %s + %s -> %s\n", file1, file2, output);
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +163,7 @@ static void run_command(const char *cmdline) {
     
     FILE *pipe = popen(cmdline, "r");
     if (!pipe) {
-        printf("failed to run command\n");
+        printf("failed to run command: %s\n", strerror(errno));
         exit(1);
     }
     
@@ -162,39 +214,6 @@ static void pad_bootsector(const char *path) {
     fwrite(data, 1, 512, f);
     fclose(f);
     printf("Padded bootsector: %s (512 bytes with AA55 signature)\n", path);
-}
-
-static void concatenate_files(const char *output, const char *file1, const char *file2) {
-    char outpath[1024], p1[1024], p2[1024];
-    snprintf(outpath, sizeof(outpath), "%s%c%s", current_cwd, PATH_SEP, output);
-    snprintf(p1, sizeof(p1), "%s%c%s", current_cwd, PATH_SEP, file1);
-    snprintf(p2, sizeof(p2), "%s%c%s", current_cwd, PATH_SEP, file2);
-    
-    FILE *out = fopen(outpath, "wb");
-    if (!out) exit(1);
-    
-    FILE *in = fopen(p1, "rb");
-    if (in) { 
-        while (!feof(in)) { 
-            char b[4096]; 
-            size_t r = fread(b,1,sizeof(b),in); 
-            fwrite(b,1,r,out); 
-        } 
-        fclose(in); 
-    }
-    
-    in = fopen(p2, "rb");
-    if (in) { 
-        while (!feof(in)) { 
-            char b[4096]; 
-            size_t r = fread(b,1,sizeof(b),in); 
-            fwrite(b,1,r,out); 
-        } 
-        fclose(in); 
-    }
-    
-    fclose(out);
-    printf("Concatenated %s + %s -> %s\n", file1, file2, output);
 }
 
 // ---------------------------------------------------------------------------
