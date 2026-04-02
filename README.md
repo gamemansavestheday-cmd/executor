@@ -12,7 +12,7 @@ you feed it a text file full of commands that an AI generated, and it just fucki
 - pads bootsectors with the proper AA55 signature
 - concatenates binaries (bootloader + kernel = fun)
 - dies immediately if anything goes wrong (the way god intended)
-
+- gives you safety tips if you run ./executor help (or executor.exe) and it also gives you help output if you dont run help and just the binary by itself
 # how to use
 
 1. save the AI output as `myproject.txt`
