@@ -35,6 +35,18 @@ RUN_COMMAND|command|arg1|arg2|...
 PAD_BOOTSECTOR|path/to/boot.bin
 CONCATENATE_FILES|output.bin|file1.bin|file2.bin
 
+(IMPORTANT) INDENT|N
+    - sets indentation level to N spaces for the next CREATE_FILE block
+    - use this right before code blocks because some AIs have dogshit formatting
+    - example:
+      INDENT|4
+      CREATE_FILE|main.c
+      #include <stdio.h>
+      int main() {
+          printf("hello world\n");
+      }
+      END_FILE
+    - indent automatically resets to 0 after END_FILE
 Example bootloader blueprint:
 
 REQUIRE_TOOL|nasm

@@ -5,9 +5,11 @@
  * rewrote because Python was slow as shit and the old sandbox was a security incident waiting to happen
  * now the blueprint is a braindead text DSL. AI spits commands, we execute them. No more exec() russian roulette.
  * Safer, faster, and i actually know what the fuck is happening under the hood (most of the time)
+ * PLEASE ONLY FUCKING COMPILE WITH gcc -o executor executor.c -Wall -Wextra -O3 -std=gnu99 -march=native -Wno-format-truncation
  */
 
 #define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +32,7 @@
     #define sleep_ms(x) sleep((x)/1000)
 #endif
 static void set_cwd(const char *new_cwd);
+static int current_indent_level = 0;
 static void create_project_folder(const char *name);
 static void create_file(const char *path, const char *content, size_t content_len);
 static void concatenate_files(const char *output, const char *file1, const char *file2);
@@ -79,7 +82,7 @@ static void require_tool(const char *tool) {
 // i went full retard on the snprintf because gcc was being a whiny bitch
 // ---------------------------------------------------------------------------
 static void create_project_folder(const char *name) {
-    char fullpath[1024];
+    char fullpath[4096];
     snprintf(fullpath, sizeof(fullpath) - 1, "%s%c%s", current_cwd, PATH_SEP, name);
     fullpath[sizeof(fullpath)-1] = '\0';   // force null termination because gcc has trust issues
     
@@ -91,8 +94,7 @@ static void create_project_folder(const char *name) {
     }
 }
 
-static void set_cwd(const char *new_cwd) {   
-    // this was missing and causing the implicit declaration error this is what i fixed this update but i wont be releasing this was a minor version if your reading this, i went fulll retard mode so last updates thats why you couldnt compile last release and there was a duplicate of dependency handler when im trying to organize sections of the code
+static void set_cwd(const char *new_cwd) {
     if (chdir(new_cwd) != 0) {
         printf("failed to chdir to %s: %s\n", new_cwd, strerror(errno));
         exit(1);
@@ -112,7 +114,9 @@ static void create_file(const char *path, const char *content, size_t content_le
         printf("failed to create file %s: %s\n", path, strerror(errno));
         exit(1);
     }
-    fwrite(content, 1, content_len, f); // now binary safe you fucking animal
+    if (content_len > 0) {
+        fwrite(content, 1, content_len, f); // now binary safe you fucking animal
+    }
     fclose(f);
     printf("created file: %s\n", path); 
 }
@@ -217,22 +221,83 @@ static void pad_bootsector(const char *path) {
 }
 
 // ---------------------------------------------------------------------------
-// Dependency Handler - now with zero buffer overflow cancer
+// Dependency Handler
 // ---------------------------------------------------------------------------
-
 /*
- * i dont fucking know how to handle dependencies either so i just went full schizo mode and made this thing detect literally every distro you could possibly be using
- * windows? handled. fedora? handled. debian? handled. arch? handled. void? handled. suse? handled. if your distro isnt here then youre probably using gentoo and you deserve the pain
+ * i dont fucking know how to handle dependencies either so i just went full schizo mode
+ * windows? handled. fedora? handled. debian? handled. arch? handled. void? handled. suse? handled.
+ * if your distro isnt here then youre probably using gentoo and you deserve the pain
  */
-
 static void handle_dependencies(const char *manager, char **deps, int dep_count) {
     printf("--- [DEPENDENCIES] AI wants me to install some shit using '%s' ---\n", manager);
-    
+    printf("--- [DETECTION MODE] figuring out what the fuck OS you're on ---\n");
+
     bool is_windows = false;
 #ifdef _WIN32
     is_windows = true;
-    printf("oh great a windows user... fine i'll try to not break your soul\n");
+    printf("oh great a windows user...\n");
 #endif
+
+    // AUTO DETECT LINUX DISTRO BECAUSE AI KEEPS FUCKING UP THE MANAGER NAME
+    const char *detected_manager = NULL;
+
+    if (access("/etc/arch-release", F_OK) == 0 || access("/etc/pacman.conf", F_OK) == 0) {
+        printf("DETECTED: ARCH LINUX (you beautiful degenerate)\n");
+        detected_manager = "pacman";
+    }
+    else if (access("/etc/fedora-release", F_OK) == 0 || access("/etc/redhat-release", F_OK) == 0) {
+        printf("DETECTED: FEDORA / RHEL STYLE\n");
+        detected_manager = "dnf";
+    }
+    else if (access("/etc/debian_version", F_OK) == 0 || access("/etc/lsb-release", F_OK) == 0) {
+        printf("DETECTED: DEBIAN / UBUNTU STYLE\n");
+        detected_manager = "apt";
+    }
+    else if (access("/etc/void-release", F_OK) == 0) {
+        printf("DETECTED: VOID LINUX\n");
+        detected_manager = "xbps";
+    }
+    else if (access("/etc/os-release", F_OK) == 0) {
+        // just fallback check inside os-release file
+        FILE *osf = fopen("/etc/os-release", "r");
+        if (osf) {
+            char line[256];
+            while (fgets(line, sizeof(line), osf)) {
+                if (strstr(line, "ID=arch") || strstr(line, "ID_LIKE=arch")) detected_manager = "pacman";
+                else if (strstr(line, "ID=fedora") || strstr(line, "ID=rhel")) detected_manager = "dnf";
+                else if (strstr(line, "ID=debian") || strstr(line, "ID=ubuntu")) detected_manager = "apt";
+            }
+            fclose(osf);
+        }
+    }
+
+    // if we detected something and the AI gave us garbage, override it
+    if (detected_manager && strcmp(manager, detected_manager) != 0) {
+        printf("AI gave wrong manager '%s' - forcing detected '%s' because you're on arch you animal\n", manager, detected_manager);
+        manager = (char*)detected_manager; // yes this is evil but it works
+    }
+
+    // REMAP COMMON DEBIAN PACKAGE NAMES TO ARCH NAMES BECAUSE THE AI IS A FUCKING MORON
+    // some ais think the entire planet runs ubuntu, so we fix their shit here
+    if (strcmp(manager, "pacman") == 0) {
+        for (int i = 0; i < dep_count; i++) {
+            if (strcmp(deps[i], "libsdl2-dev") == 0) {
+                deps[i] = "sdl2";
+                printf("remapped libsdl2-dev -> sdl2 because ai is braindead\n");
+            }
+            else if (strcmp(deps[i], "libx11-dev") == 0) {
+                deps[i] = "libx11";
+                printf("remapped libx11-dev -> libx11 because ai is braindead\n");
+            }
+            else if (strcmp(deps[i], "build-essential") == 0) {
+                printf("skipping build-essential on arch (you already have gcc + make)\n");
+                deps[i] = "gcc"; // dummy so it doesn't break the loop
+            }
+            // add more remaps here when the ai inevitably fucks up again
+            // example:
+            // else if (strcmp(deps[i], "libgl1-mesa-dev") == 0) deps[i] = "mesa";
+        }
+    }
 
     if (is_windows) {
         if (strcmp(manager, "winget") == 0 || strcmp(manager, "choco") == 0) {
@@ -338,7 +403,7 @@ static void handle_dependencies(const char *manager, char **deps, int dep_count)
         return;
     }
     else {
-        printf("i dont know what the fuck '%s' is. use apt, dnf, pacman, xbps, zypper, pip, or npm\n", manager);
+        printf("i dont know what the fuck '%s' is. use apt, dnf, pacman, xbps, zypper, pip, or npm\n", manager); // how does this even work? its simple if the ai is retarded well... we make the user do it
         exit(1);
     }
 
@@ -375,16 +440,29 @@ static void execute_blueprint(const char *filename) {
     bool collecting_content = false;
     
     while (fgets(line, sizeof(line), f)) {
+
         line[strcspn(line, "\r\n")] = 0;
         if (strlen(line) == 0 || line[0] == '#') continue;
         
-        if (collecting_content) {
+if (collecting_content) {
             if (strcmp(line, "END_FILE") == 0) {
                 create_file(current_file_path, content_buffer, content_len);
                 collecting_content = false;
                 content_len = 0;
+                current_indent_level = 0;   // reset indent after file ends
                 continue;
             }
+
+            // apply current indent level to every line
+            if (current_indent_level > 0) {
+                for (int i = 0; i < current_indent_level; i++) {
+                    if (content_len + 1 < MAX_CONTENT) {
+                        content_buffer[content_len++] = ' ';
+                    }
+                }
+            }
+
+            // append the actual line
             size_t to_add = strlen(line);
             if (content_len + to_add + 2 < MAX_CONTENT) {
                 memcpy(content_buffer + content_len, line, to_add);
@@ -394,9 +472,21 @@ static void execute_blueprint(const char *filename) {
             continue;
         }
         
+        // parse COMMAND|arg1|arg2|...
         char *token = strtok(line, "|");
         if (!token) continue;
         
+// NEW INDENT COMMAND - because some AIs have dogshit formatting
+        if (strcmp(token, "INDENT") == 0) {
+            char *level_str = strtok(NULL, "|");
+            if (level_str) {
+                current_indent_level = atoi(level_str);
+                if (current_indent_level < 0) current_indent_level = 0;
+                printf("indent level set to %d spaces for next file(s)\n", current_indent_level);
+            }
+            continue;
+        }
+
         if (strcmp(token, "REQUIRE_TOOL") == 0) {
             char *tool = strtok(NULL, "|");
             if (tool) require_tool(tool);
@@ -413,8 +503,10 @@ static void execute_blueprint(const char *filename) {
             char *path = strtok(NULL, "|");
             if (path) {
                 strncpy(current_file_path, path, sizeof(current_file_path)-1);
+                current_file_path[sizeof(current_file_path)-1] = '\0';
                 collecting_content = true;
                 content_len = 0;
+                printf("starting to read file: %s\n", current_file_path);
             }
         }
         else if (strcmp(token, "RUN_COMMAND") == 0) {
@@ -468,7 +560,7 @@ static void execute_blueprint(const char *filename) {
 }
 
 // ---------------------------------------------------------------------------
-// NEW SHIT FOR 0.1.2 - help, guide, dry-run, and direct paste support
+// NEW SHIT FOR 0.1.1- help, guide, dry-run, and direct paste support (used to be 0.1.2 but i decided to not make the bugfix update the 0.1.2)
 // ---------------------------------------------------------------------------
 
 static void print_help(void) {
