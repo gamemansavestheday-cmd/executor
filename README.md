@@ -28,9 +28,7 @@ as another note if you run help itll give you safety tips which are obvious if y
 how to compile 
 linux:
 
-`gcc -o executor executor.c -Wall -Wextra -O2 -std=c99`
-
-`gcc -o executor executor.c -Wall -Wextra -O3 -std=c99 -march=native`
+`gcc -o executor executor.c -Wall -Wextra -O3 -std=gnu99 -march=native -Wno-format-truncation`
 
 after build just do chmod +x executor
 `./executor myblueprint.txt`
